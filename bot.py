@@ -4,8 +4,7 @@ from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command 
 from deep_translator import GoogleTranslator 
 import google.generativeai as genai
-from google.generativeai.errors import APIError
-# Обратите внимание: старые импорты типов (HarmCategory и др.) удалены.
+from google.api_core.exceptions import APIError # КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ ПУТИ ИМПОРТА ОШИБКИ
 
 # ==================================
 # 1. Инициализация и настройки 
@@ -34,8 +33,7 @@ languages = {
 
 user_lang = {}
 
-# НОВАЯ КОНФИГУРАЦИЯ БЕЗОПАСНОСТИ (Используем строковый формат для совместимости с Python 3.13.4)
-# BLOCK_NONE означает, что блокировки не будет.
+# КОНФИГУРАЦИЯ БЕЗОПАСНОСТИ (Используем строковый формат для совместимости)
 SAFETY_SETTINGS = [
     {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
     {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
@@ -45,7 +43,6 @@ SAFETY_SETTINGS = [
 
 # Инициализация клиента Gemini
 try:
-    # Используем genai.Client() из нового импорта
     gemini_client = genai.Client(api_key=GEMINI_API_KEY)
 except Exception as e:
     print(f"Ошибка инициализации Gemini: {e}")
@@ -58,8 +55,6 @@ except Exception as e:
 async def get_gemini_response(prompt: str):
     """Отправляет запрос в Gemini и возвращает текст или ошибку."""
     try:
-        # Используем genai.generate_content (или gemini_client.models.generate_content)
-        # и передаем SAFETY_SETTINGS напрямую.
         response = gemini_client.models.generate_content(
             model='gemini-2.5-flash',
             contents=prompt,
