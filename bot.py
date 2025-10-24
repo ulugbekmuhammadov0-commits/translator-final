@@ -3,16 +3,15 @@ import asyncio
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command 
 from deep_translator import GoogleTranslator 
-from google import genai
-from google.genai.errors import APIError
-from google.genai.types import HarmCategory as HCategory, SafetySetting, HarmBlockThreshold 
-from google.genai.errors import APIError
+import google.generativeai as genai
+from google.generativeai.errors import APIError
+# Обратите внимание: старые импорты типов (HarmCategory и др.) удалены.
 
 # ==================================
 # 1. Инициализация и настройки 
 # ==================================
 
-# Чтение ключей из окружения Render. Ключи должны быть в Environment Variables!
+# Чтение ключей из окружения Render.
 BOT_TOKEN = os.getenv("BOT_TOKEN") 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
@@ -35,22 +34,18 @@ languages = {
 
 user_lang = {}
 
-# КОНФИГУРАЦИЯ БЕЗОПАСНОСТИ (для Gemini)
+# НОВАЯ КОНФИГУРАЦИЯ БЕЗОПАСНОСТИ (Используем строковый формат для совместимости с Python 3.13.4)
+# BLOCK_NONE означает, что блокировки не будет.
 SAFETY_SETTINGS = [
-    SafetySetting(
-        category=category,
-        threshold=HarmBlockThreshold.BLOCK_NONE,
-    )
-    for category in [
-        HCategory.HARM_CATEGORY_HARASSMENT,
-        HCategory.HARM_CATEGORY_HATE_SPEECH,
-        HCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
-        HCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
-    ]
+    {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+    {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+    {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+    {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
 ]
 
 # Инициализация клиента Gemini
 try:
+    # Используем genai.Client() из нового импорта
     gemini_client = genai.Client(api_key=GEMINI_API_KEY)
 except Exception as e:
     print(f"Ошибка инициализации Gemini: {e}")
@@ -63,14 +58,16 @@ except Exception as e:
 async def get_gemini_response(prompt: str):
     """Отправляет запрос в Gemini и возвращает текст или ошибку."""
     try:
+        # Используем genai.generate_content (или gemini_client.models.generate_content)
+        # и передаем SAFETY_SETTINGS напрямую.
         response = gemini_client.models.generate_content(
             model='gemini-2.5-flash',
             contents=prompt,
-            config=genai.types.GenerateContentConfig(
-                temperature=0.4,
-                max_output_tokens=400,
-                safety_settings=SAFETY_SETTINGS
-            )
+            config={
+                "temperature": 0.4,
+                "max_output_tokens": 400
+            },
+            safety_settings=SAFETY_SETTINGS
         )
         if response and response.text:
             return response.text.strip()
