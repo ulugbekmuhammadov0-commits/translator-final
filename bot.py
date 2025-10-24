@@ -4,13 +4,14 @@ from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command 
 from deep_translator import GoogleTranslator 
 import google.generativeai as genai
-from google.api_core.exceptions import GoogleAPIError
+# Корректный импорт исключения для новой версии SDK
+from google.api_core.exceptions import GoogleAPIError 
 
 # ==================================
 # 1. Инициализация и настройки 
 # ==================================
 
-# Чтение ключей из окружения Render.
+# Чтение ключей из окружения Render
 BOT_TOKEN = os.getenv("BOT_TOKEN") 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
@@ -33,7 +34,7 @@ languages = {
 
 user_lang = {}
 
-# КОНФИГУРАЦИЯ БЕЗОПАСНОСТИ
+# КОНФИГУРАЦИЯ БЕЗОПАСНОСТИ (Снятие блокировок для максимальной свободы ответа)
 SAFETY_SETTINGS = [
     {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
     {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
@@ -41,12 +42,13 @@ SAFETY_SETTINGS = [
     {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
 ]
 
-# Инициализация Gemini API
+# Правильная инициализация Gemini API через configure()
 try:
     genai.configure(api_key=GEMINI_API_KEY)
     print("✅ Gemini API настроен успешно")
 except Exception as e:
     print(f"❌ Ошибка инициализации Gemini: {e}")
+
 
 # ==================================
 # 2. Общая функция для вызова Gemini
@@ -55,7 +57,8 @@ except Exception as e:
 async def get_gemini_response(prompt: str):
     """Отправляет запрос в Gemini и возвращает текст или ошибку."""
     try:
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        # ИСПРАВЛЕНИЕ: Используем стабильный и актуальный алиас модели
+        model = genai.GenerativeModel('gemini-1.5-flash-latest') 
         
         response = model.generate_content(
             prompt,
@@ -66,14 +69,19 @@ async def get_gemini_response(prompt: str):
             safety_settings=SAFETY_SETTINGS
         )
         
-        if response.text:
+        if response and response.text:
             return response.text.strip()
+        
+        # Обработка случая, когда ответ пуст или заблокирован
         return "⚠️ Gemini не смог дать ответ."
         
     except GoogleAPIError as e:
+        # Обработка ошибок, связанных с API (например, 404, неверный ключ)
         return f"⚠️ Ошибка ИИ (API Gemini): {e}"
     except Exception as e:
+        # Универсальный обработчик для других ошибок
         return f"⚠️ Неизвестная ошибка ИИ: {e}"
+
 
 # ==================================
 # 3. Хендлеры (Обработчики сообщений)
@@ -110,6 +118,7 @@ async def handle_text(message: types.Message):
     translation = ""
     try:
         translator.target = target_lang_code 
+        # Выполняем блокирующую операцию в отдельном потоке
         translation = await asyncio.to_thread(translator.translate, source_text)
         if not translation:
              translation = source_text
@@ -117,12 +126,12 @@ async def handle_text(message: types.Message):
         await message.answer(f"⚠️ Ошибка перевода: {e}")
         return
 
-    # --- Шаг 2: Объяснение с помощью Gemini (Обходной путь через Английский) ---
+    # --- Шаг 2: Объяснение с помощью Gemini ---
     gemini_output_lang = "en"
     ai_text = ""
     ai_text_en = ""
     
-    # 1. Gemini всегда генерирует объяснение на английском
+    # 1. Запрос объяснения на английском (для лучшей стабильности Gemini)
     prompt_en = (
         f"Объясни значение и дай краткий контекст для фразы: '{translation}'. "
         f"Ответ должен быть на АНГЛИЙСКОМ языке и быть максимально коротким и по существу."
@@ -145,7 +154,7 @@ async def handle_text(message: types.Message):
 
     # --- Шаг 3: Отправка результата с кнопкой "Синонимы" ---
     
-    # Используем ТОЛЬКО ПЕРВОЕ СЛОВО перевода для callback_data (для стабильности)
+    # Используем ТОЛЬКО ПЕРВОЕ СЛОВО перевода для callback_data
     first_word = translation.split()[0][:20] 
     synonym_callback_data = f"SYNONYM_{target_lang_code}_{first_word}"
     
@@ -242,6 +251,7 @@ async def main():
         await dp.start_polling(bot, skip_updates=True)
     else:
         print("Ключи API не настроены. Бот не будет запущен.")
+
 
 if __name__ == "__main__":
     try:
