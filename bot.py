@@ -4,7 +4,14 @@ from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command 
 from deep_translator import GoogleTranslator 
 import google.generativeai as genai
-from google.api_core.exceptions import APIError # КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ ПУТИ ИМПОРТА ОШИБКИ
+
+# КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Импортируем APIError напрямую из основного модуля SDK.
+# Это решает проблему: ImportError: cannot import name 'APIError' from 'google.api_core.exceptions'
+try:
+    from google.generativeai import APIError
+except ImportError:
+    # Запасной вариант, если APIError не экспортируется напрямую (менее вероятно, но надежно)
+    from google.api_core.exceptions import GoogleAPICallError as APIError
 
 # ==================================
 # 1. Инициализация и настройки 
@@ -70,6 +77,7 @@ async def get_gemini_response(prompt: str):
     except APIError as e:
         return f"⚠️ Ошибка ИИ (API Gemini): {e}"
     except Exception as e:
+        # Универсальный обработчик для любых других ошибок (например, ResourceExhausted)
         return f"⚠️ Неизвестная ошибка ИИ: {e}"
 
 
