@@ -4,20 +4,14 @@ from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command 
 from deep_translator import GoogleTranslator 
 import google.generativeai as genai
-
-# КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Импортируем APIError напрямую из основного модуля SDK.
-# Это решает проблему: ImportError: cannot import name 'APIError' from 'google.api_core.exceptions'
-try:
-    from google.generativeai import APIError
-except ImportError:
-    # Запасной вариант, если APIError не экспортируется напрямую (менее вероятно, но надежно)
-    from google.api_core.exceptions import GoogleAPICallError as APIError
+# КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Используем GoogleAPIError, который доступен в google.api_core.exceptions
+from google.api_core.exceptions import GoogleAPIError 
 
 # ==================================
 # 1. Инициализация и настройки 
 # ==================================
 
-# Чтение ключей из окружения Render.
+# Чтение ключей из окружения Render
 BOT_TOKEN = os.getenv("BOT_TOKEN") 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
@@ -48,11 +42,12 @@ SAFETY_SETTINGS = [
     {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
 ]
 
-# Инициализация клиента Gemini
+# КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Правильная инициализация Gemini
 try:
-    gemini_client = genai.Client(api_key=GEMINI_API_KEY)
+    genai.configure(api_key=GEMINI_API_KEY)
+    print("✅ Gemini API настроен успешно")
 except Exception as e:
-    print(f"Ошибка инициализации Gemini: {e}")
+    print(f"❌ Ошибка инициализации Gemini: {e}")
 
 
 # ==================================
@@ -62,22 +57,27 @@ except Exception as e:
 async def get_gemini_response(prompt: str):
     """Отправляет запрос в Gemini и возвращает текст или ошибку."""
     try:
-        response = gemini_client.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=prompt,
-            config={
-                "temperature": 0.4,
-                "max_output_tokens": 400
-            },
+        # Инициализация модели внутри функции (для надежности)
+        model = genai.GenerativeModel('gemini-1.5-flash') 
+        
+        # КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Правильный вызов API
+        response = model.generate_content(
+            prompt,
+            generation_config=genai.types.GenerationConfig(
+                temperature=0.4,
+                max_output_tokens=400
+            ),
             safety_settings=SAFETY_SETTINGS
         )
+        
         if response and response.text:
             return response.text.strip()
         return "⚠️ Gemini не смог дать ответ."
-    except APIError as e:
+        
+    except GoogleAPIError as e: # ИСПОЛЬЗУЕМ ИСПРАВЛЕННЫЙ КЛАСС ОШИБКИ
         return f"⚠️ Ошибка ИИ (API Gemini): {e}"
     except Exception as e:
-        # Универсальный обработчик для любых других ошибок (например, ResourceExhausted)
+        # Универсальный обработчик для любых других ошибок
         return f"⚠️ Неизвестная ошибка ИИ: {e}"
 
 
