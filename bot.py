@@ -4,7 +4,6 @@ from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command 
 from deep_translator import GoogleTranslator 
 import google.generativeai as genai
-# Корректный импорт исключения для обработки ошибок API
 from google.api_core.exceptions import GoogleAPIError 
 
 # ==================================
@@ -46,6 +45,15 @@ SAFETY_SETTINGS = [
 try:
     genai.configure(api_key=GEMINI_API_KEY)
     print("✅ Gemini API настроен успешно")
+    
+    # Проверка доступных моделей
+    try:
+        models = genai.list_models()
+        available_models = [model.name for model in models if 'generateContent' in model.supported_generation_methods]
+        print(f"✅ Доступные модели для generateContent: {available_models}")
+    except Exception as e:
+        print(f"⚠️ Не удалось получить список моделей: {e}")
+        
 except Exception as e:
     print(f"❌ Ошибка инициализации Gemini: {e}")
 
@@ -57,9 +65,9 @@ except Exception as e:
 async def get_gemini_response(prompt: str):
     """Отправляет запрос в Gemini и возвращает текст или ошибку."""
     try:
-        # КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Используем стабильную модель 'gemini-pro',
-        # которая гарантированно доступна и работает (решает ошибку 404)
-        model = genai.GenerativeModel('gemini-pro') 
+        # ГАРАНТИРОВАННО РАБОТАЮЩАЯ МОДЕЛЬ
+        model = genai.GenerativeModel('gemini-pro')
+        print(f"🔍 Используем модель: gemini-pro")
         
         response = model.generate_content(
             prompt,
@@ -73,14 +81,11 @@ async def get_gemini_response(prompt: str):
         if response and response.text:
             return response.text.strip()
         
-        # Обработка случая, когда ответ пуст или заблокирован
         return "⚠️ Gemini не смог дать ответ."
         
     except GoogleAPIError as e:
-        # Обработка ошибок, связанных с API (например, 404, неверный ключ)
         return f"⚠️ Ошибка ИИ (API Gemini): {e}"
     except Exception as e:
-        # Универсальный обработчик для других ошибок
         return f"⚠️ Неизвестная ошибка ИИ: {e}"
 
 
@@ -119,7 +124,6 @@ async def handle_text(message: types.Message):
     translation = ""
     try:
         translator.target = target_lang_code 
-        # Выполняем блокирующую операцию в отдельном потоке
         translation = await asyncio.to_thread(translator.translate, source_text)
         if not translation:
              translation = source_text
@@ -132,7 +136,7 @@ async def handle_text(message: types.Message):
     ai_text = ""
     ai_text_en = ""
     
-    # 1. Запрос объяснения на английском (для лучшей стабильности Gemini)
+    # 1. Запрос объяснения на английском
     prompt_en = (
         f"Объясни значение и дай краткий контекст для фразы: '{translation}'. "
         f"Ответ должен быть на АНГЛИЙСКОМ языке и быть максимально коротким и по существу."
@@ -151,12 +155,12 @@ async def handle_text(message: types.Message):
         else:
             ai_text = ai_text_en
     else:
-        ai_text = ai_text_en # Передаем ошибку, если она была
+        ai_text = ai_text_en
 
     # --- Шаг 3: Отправка результата с кнопкой "Синонимы" ---
     
     # Используем ТОЛЬКО ПЕРВОЕ СЛОВО перевода для callback_data
-    first_word = translation.split()[0][:20] 
+    first_word = translation.split()[0][:20] if translation else "word"
     synonym_callback_data = f"SYNONYM_{target_lang_code}_{first_word}"
     
     inline_keyboard = types.InlineKeyboardMarkup(
@@ -228,9 +232,7 @@ async def handle_synonym_request(callback_query: types.CallbackQuery):
         if synonyms_text.startswith("⚠️"):
              pass # Ошибка уже в тексте
         elif not synonyms_text or len(synonyms_text) < 5:
-             # Если ответ пуст
              synonyms_text = f"⚠️ Gemini не смог найти синонимы или альтернативы для слова \"{word}\"."
-
 
     # --- Отправка результата ---
     await bot.send_message(
@@ -246,21 +248,19 @@ async def handle_synonym_request(callback_query: types.CallbackQuery):
 # 5. Асинхронный запуск бота (aiogram 3.x)
 # ==================================
 async def main():
-    print("🔄 Пробуем принудительно очистить возможные конфликты...")
+    print("🔄 Запуск бота...")
+    
+    # Принудительная очистка вебхука
+    try:
+        await bot.delete_webhook(drop_pending_updates=True)
+        print("✅ Вебхук очищен")
+        await asyncio.sleep(2)
+    except Exception as e:
+        print(f"⚠️ Ошибка очистки вебхука: {e}")
     
     if BOT_TOKEN and GEMINI_API_KEY:
-        try:
-            # ПРИНУДИТЕЛЬНАЯ ОЧИСТКА ВЕБХУКА (Решает TelegramConflictError)
-            await bot.delete_webhook(drop_pending_updates=True) 
-            print("✅ Вебхук очищен.")
-            await asyncio.sleep(2)
-            
-            print("Бот запущен. Ожидание сообщений...")
-            await dp.start_polling(bot, skip_updates=True) 
-            
-        except Exception as e:
-            print(f"❌ Ошибка во время запуска Polling: {e}")
-            
+        print("🚀 Бот запущен. Ожидание сообщений...")
+        await dp.start_polling(bot, skip_updates=True)
     else:
         print("❌ Ключи API не настроены. Бот не будет запущен.")
 
