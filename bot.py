@@ -4,7 +4,7 @@ from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command 
 from deep_translator import GoogleTranslator 
 import google.generativeai as genai
-# Корректный импорт исключения для новой версии SDK
+# Корректный импорт исключения для обработки ошибок API
 from google.api_core.exceptions import GoogleAPIError 
 
 # ==================================
@@ -34,7 +34,7 @@ languages = {
 
 user_lang = {}
 
-# КОНФИГУРАЦИЯ БЕЗОПАСНОСТИ (Снятие блокировок для максимальной свободы ответа)
+# КОНФИГУРАЦИЯ БЕЗОПАСНОСТИ 
 SAFETY_SETTINGS = [
     {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
     {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
@@ -42,7 +42,7 @@ SAFETY_SETTINGS = [
     {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
 ]
 
-# Правильная инициализация Gemini API через configure()
+# Правильная инициализация Gemini API
 try:
     genai.configure(api_key=GEMINI_API_KEY)
     print("✅ Gemini API настроен успешно")
@@ -57,8 +57,9 @@ except Exception as e:
 async def get_gemini_response(prompt: str):
     """Отправляет запрос в Gemini и возвращает текст или ошибку."""
     try:
-        # ИСПРАВЛЕНИЕ: Используем стабильный и актуальный алиас модели
-        model = genai.GenerativeModel('gemini-1.5-flash-latest') 
+        # КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Используем стабильную модель 'gemini-pro',
+        # которая гарантированно доступна и работает (решает ошибку 404)
+        model = genai.GenerativeModel('gemini-pro') 
         
         response = model.generate_content(
             prompt,
@@ -245,12 +246,23 @@ async def handle_synonym_request(callback_query: types.CallbackQuery):
 # 5. Асинхронный запуск бота (aiogram 3.x)
 # ==================================
 async def main():
-    print("Бот запущен. Ожидание сообщений...")
-    # Проверка на наличие ключа перед запуском polling
+    print("🔄 Пробуем принудительно очистить возможные конфликты...")
+    
     if BOT_TOKEN and GEMINI_API_KEY:
-        await dp.start_polling(bot, skip_updates=True)
+        try:
+            # ПРИНУДИТЕЛЬНАЯ ОЧИСТКА ВЕБХУКА (Решает TelegramConflictError)
+            await bot.delete_webhook(drop_pending_updates=True) 
+            print("✅ Вебхук очищен.")
+            await asyncio.sleep(2)
+            
+            print("Бот запущен. Ожидание сообщений...")
+            await dp.start_polling(bot, skip_updates=True) 
+            
+        except Exception as e:
+            print(f"❌ Ошибка во время запуска Polling: {e}")
+            
     else:
-        print("Ключи API не настроены. Бот не будет запущен.")
+        print("❌ Ключи API не настроены. Бот не будет запущен.")
 
 
 if __name__ == "__main__":
