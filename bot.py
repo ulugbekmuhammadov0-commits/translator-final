@@ -4,14 +4,11 @@ from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command 
 from deep_translator import GoogleTranslator 
 import google.generativeai as genai
-# Корректный импорт исключения для обработки ошибок API
-from google.api_core.exceptions import GoogleAPIError 
 
 # ==================================
 # 1. Инициализация и настройки 
 # ==================================
 
-# Чтение ключей из окружения Render
 BOT_TOKEN = os.getenv("BOT_TOKEN") 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
@@ -28,13 +25,13 @@ translator = GoogleTranslator(source='auto', target='en')
 # Настройки языков
 languages = {
     "Русский 🇷🇺": "ru",
-    "Английский 🇬🇧": "en",
+    "Английский 🇬🇧": "en", 
     "Узбекский 🇺🇿": "uz"
 }
 
 user_lang = {}
 
-# КОНФИГУРАЦИЯ БЕЗОПАСНОСТИ 
+# КОНФИГУРАЦИЯ БЕЗОПАСНОСТИ
 SAFETY_SETTINGS = [
     {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
     {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
@@ -42,63 +39,45 @@ SAFETY_SETTINGS = [
     {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
 ]
 
-# Глобальная переменная для рабочей модели
+# Автоматический поиск рабочей модели Gemini
 WORKING_MODEL = None
 
-# Инициализация Gemini API с поиском рабочей модели
 try:
     genai.configure(api_key=GEMINI_API_KEY)
     print("✅ Gemini API настроен успешно")
     
-    # Поиск рабочей модели (Ваш продвинутый блок)
-    try:
-        models = genai.list_models()
-        available_models = []
-        
-        for model in models:
-            if 'generateContent' in model.supported_generation_methods:
-                available_models.append(model.name)
-                # print(f"🔍 Найдена модель: {model.name}") # Убрано для чистоты логов
-        
-        print(f"✅ Всего доступно моделей для generateContent: {len(available_models)}")
-        
-        # Пробуем самые стабильные модели в порядке приоритета
-        test_models = [
-            'gemini-pro',
-            'models/gemini-pro',
-            'gemini-1.5-flash-latest',
-            'models/gemini-1.5-flash-latest',
-            'gemini-1.0-pro', 
-            'gemini-1.0-pro-001'
-        ]
-        
-        for model_name in test_models:
-            if model_name in available_models:
-                try:
-                    # Тестируем, чтобы убедиться, что модель действительно работает
-                    test_model = genai.GenerativeModel(model_name)
-                    # Выполняем короткий, недорогой запрос
-                    test_model.generate_content("test", timeout=5) 
-                    
-                    WORKING_MODEL = model_name
-                    print(f"🎉 УСПЕХ! Автоматически выбрана рабочая модель: {WORKING_MODEL}")
-                    break
-                except Exception as e:
-                    print(f"❌ Модель {model_name} не сработала при тесте: {e}")
-                    continue
-            
-        if not WORKING_MODEL:
-            # Если ни одна из моделей не сработала, используем самый безопасный fallback
-            print("❌ Не найдено ни одной гарантированно рабочей модели! Используем fallback 'gemini-pro'.")
-            WORKING_MODEL = "gemini-pro" 
-            
-    except Exception as e:
-        print(f"❌ Ошибка поиска моделей: {e}")
-        WORKING_MODEL = "gemini-pro" # fallback
+    # Тестируем модели в порядке приоритета
+    test_models = [
+        'gemini-1.5-flash-latest',
+        'models/gemini-1.5-flash-latest',
+        'gemini-1.5-flash',
+        'gemini-pro', 
+        'models/gemini-pro',
+        'gemini-1.0-pro',
+        'models/gemini-1.0-pro'
+    ]
+    
+    for model_name in test_models:
+        try:
+            print(f"🔄 Тестируем модель: {model_name}")
+            model = genai.GenerativeModel(model_name)
+            # Быстрый тестовый запрос
+            response = model.generate_content("test")
+            if response and response.text:
+                WORKING_MODEL = model_name
+                print(f"🎉 НАЙДЕНА РАБОЧАЯ МОДЕЛЬ: {WORKING_MODEL}")
+                break
+        except Exception as e:
+            print(f"❌ Модель {model_name} не сработала: {str(e)[:100]}")
+            continue
+    
+    if not WORKING_MODEL:
+        WORKING_MODEL = "gemini-1.5-flash-latest"
+        print(f"⚠️ Используем модель по умолчанию: {WORKING_MODEL}")
         
 except Exception as e:
     print(f"❌ Критическая ошибка инициализации Gemini: {e}")
-
+    WORKING_MODEL = "gemini-1.5-flash-latest"
 
 # ==================================
 # 2. Общая функция для вызова Gemini
@@ -110,7 +89,6 @@ async def get_gemini_response(prompt: str):
         if not WORKING_MODEL:
             return "⚠️ Модель Gemini не настроена"
             
-        # Используем автоматически выбранную рабочую модель
         model = genai.GenerativeModel(WORKING_MODEL)
         
         response = model.generate_content(
@@ -127,11 +105,8 @@ async def get_gemini_response(prompt: str):
         
         return "⚠️ Gemini не смог дать ответ."
         
-    except GoogleAPIError as e:
-        return f"⚠️ Ошибка ИИ (API Gemini): {e}"
     except Exception as e:
-        return f"⚠️ Неизвестная ошибка ИИ: {e}"
-
+        return f"⚠️ Ошибка ИИ: {str(e)[:200]}"
 
 # ==================================
 # 3. Хендлеры (Обработчики сообщений)
@@ -156,8 +131,10 @@ async def start(message: types.Message):
 @dp.message(F.text.in_(languages.keys()))
 async def set_language(message: types.Message):
     user_lang[message.from_user.id] = languages[message.text]
-    await message.answer(f"✅ Отлично! Перевожу на {message.text}.\nТеперь просто напиши фразу для перевода и объяснения.",
-                         reply_markup=types.ReplyKeyboardRemove())
+    await message.answer(
+        f"✅ Отлично! Перевожу на {message.text}.\nТеперь просто напиши фразу для перевода и объяснения.",
+        reply_markup=types.ReplyKeyboardRemove()
+    )
 
 @dp.message(F.text)
 async def handle_text(message: types.Message):
@@ -170,7 +147,7 @@ async def handle_text(message: types.Message):
         translator.target = target_lang_code 
         translation = await asyncio.to_thread(translator.translate, source_text)
         if not translation:
-             translation = source_text
+            translation = source_text
     except Exception as e:
         await message.answer(f"⚠️ Ошибка перевода: {e}")
         return
@@ -220,7 +197,6 @@ async def handle_text(message: types.Message):
         parse_mode="HTML",
         reply_markup=inline_keyboard
     )
-
 
 # ==================================
 # 4. Хендлер для инлайн-кнопки "Синонимы"
@@ -274,9 +250,9 @@ async def handle_synonym_request(callback_query: types.CallbackQuery):
         synonyms_text = await get_gemini_response(prompt_synonym_direct)
         
         if synonyms_text.startswith("⚠️"):
-             pass # Ошибка уже в тексте
+            pass # Ошибка уже в тексте
         elif not synonyms_text or len(synonyms_text) < 5:
-             synonyms_text = f"⚠️ Gemini не смог найти синонимы или альтернативы для слова \"{word}\"."
+            synonyms_text = f"⚠️ Gemini не смог найти синонимы или альтернативы для слова \"{word}\"."
 
     # --- Отправка результата ---
     await bot.send_message(
@@ -287,28 +263,26 @@ async def handle_synonym_request(callback_query: types.CallbackQuery):
 
     await callback_query.answer()
 
-
 # ==================================
 # 5. Асинхронный запуск бота (aiogram 3.x)
 # ==================================
+
 async def main():
     print("🔄 Запуск бота...")
     
-    # Принудительная очистка вебхука (Решает TelegramConflictError)
-    if BOT_TOKEN:
-        try:
-            await bot.delete_webhook(drop_pending_updates=True)
-            print("✅ Вебхук очищен")
-            await asyncio.sleep(2)
-        except Exception as e:
-            print(f"⚠️ Ошибка очистки вебхука: {e}")
+    # Принудительная очистка вебхука для решения конфликтов
+    try:
+        await bot.delete_webhook(drop_pending_updates=True)
+        print("✅ Вебхук очищен")
+        await asyncio.sleep(2)
+    except Exception as e:
+        print(f"⚠️ Ошибка очистки вебхука: {e}")
     
     if BOT_TOKEN and GEMINI_API_KEY:
-        print(f"🚀 Бот запущен. Рабочая модель: {WORKING_MODEL}")
+        print(f"🚀 Бот запущен. Рабочая модель Gemini: {WORKING_MODEL}")
         await dp.start_polling(bot, skip_updates=True)
     else:
         print("❌ Ключи API не настроены. Бот не будет запущен.")
-
 
 if __name__ == "__main__":
     try:
